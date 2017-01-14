@@ -1,28 +1,15 @@
 /*!
  * jQuery Transit - CSS3 transitions and transformations
- * (c) 2011-2014 Rico Sta. Cruz
+ * (c) 2011-2012 Rico Sta. Cruz <rico@ricostacruz.com>
  * MIT Licensed.
  *
  * http://ricostacruz.com/jquery.transit
  * http://github.com/rstacruz/jquery.transit
  */
 
-/* jshint expr: true */
-
-;(function (root, factory) {
-
-  if (typeof define === 'function' && define.amd) {
-    define(['jquery'], factory);
-  } else if (typeof exports === 'object') {
-    module.exports = factory(require('jquery'));
-  } else {
-    factory(root.jQuery);
-  }
-
-}(this, function($) {
-
+(function($) {
   $.transit = {
-    version: "0.9.12",
+    version: "0.9.9",
 
     // Map of $.css() keys to values for 'transitionProperty'.
     // See https://developer.mozilla.org/en/CSS/CSS_transitions#Properties_that_can_be_animated
@@ -56,6 +43,8 @@
     var prefixes = ['Moz', 'Webkit', 'O', 'ms'];
     var prop_ = prop.charAt(0).toUpperCase() + prop.substr(1);
 
+    if (prop in div.style) { return prop; }
+
     for (var i=0; i<prefixes.length; ++i) {
       var vendorProp = prefixes[i] + prop_;
       if (vendorProp in div.style) { return vendorProp; }
@@ -77,11 +66,10 @@
   support.transitionDelay = getVendorPropertyName('transitionDelay');
   support.transform       = getVendorPropertyName('transform');
   support.transformOrigin = getVendorPropertyName('transformOrigin');
-  support.filter          = getVendorPropertyName('Filter');
   support.transform3d     = checkTransform3dSupport();
 
   var eventNames = {
-    'transition':       'transitionend',
+    'transition':       'transitionEnd',
     'MozTransition':    'transitionend',
     'OTransition':      'oTransitionEnd',
     'WebkitTransition': 'webkitTransitionEnd',
@@ -112,7 +100,6 @@
     'in-out':         'ease-in-out',
     'snap':           'cubic-bezier(0,1,.5,1)',
     // Penner equations
-    'easeInCubic':    'cubic-bezier(.550,.055,.675,.190)',
     'easeOutCubic':   'cubic-bezier(.215,.61,.355,1)',
     'easeInOutCubic': 'cubic-bezier(.645,.045,.355,1)',
     'easeInCirc':     'cubic-bezier(.6,.04,.98,.335)',
@@ -182,20 +169,6 @@
     set: $.cssHooks['transit:transform'].set
   };
 
-  // ## 'filter' CSS hook
-  // Allows you to use the `filter` property in CSS.
-  //
-  //     $("#hello").css({ filter: 'blur(10px)' });
-  //
-  $.cssHooks.filter = {
-    get: function(elem) {
-      return elem.style[support.filter];
-    },
-    set: function(elem, value) {
-      elem.style[support.filter] = value;
-    }
-  };
-
   // jQuery 1.8+ supports prefix-free transitions, so these polyfills will not
   // be necessary.
   if ($.fn.jquery < "1.8") {
@@ -232,9 +205,8 @@
   // ## Other CSS hooks
   // Allows you to rotate, scale and translate.
   registerCssHook('scale');
-  registerCssHook('scaleX');
-  registerCssHook('scaleY');
   registerCssHook('translate');
+  registerCssHook('translate3d');
   registerCssHook('rotate');
   registerCssHook('rotateX');
   registerCssHook('rotateY');
@@ -244,6 +216,7 @@
   registerCssHook('skewY');
   registerCssHook('x', true);
   registerCssHook('y', true);
+  registerCssHook('z', true);
 
   // ## Transform class
   // This is the main class of a transformation property that powers
@@ -357,33 +330,43 @@
         this.perspective = unit(dist, 'px');
       },
 
-      // ### x / y
+      // ### x / y / z
       // Translations. Notice how this keeps the other value.
       //
-      //     .css({ x: 4 })       //=> "translate(4px, 0)"
-      //     .css({ y: 10 })      //=> "translate(4px, 10px)"
+      //     .css({ x: 4 })       //=> "translate(4px, 0, 0)"
+      //     .css({ y: 10 })      //=> "translate(4px, 10px, 0)"
       //
       x: function(x) {
-        this.set('translate', x, null);
+        this.set('translate', x, null, null);
       },
 
       y: function(y) {
-        this.set('translate', null, y);
+        this.set('translate', null, y, null);
+      },
+
+      z: function(z) {
+        this.set('translate3d', null, null, z);
       },
 
       // ### translate
       // Notice how this keeps the other value.
       //
-      //     .css({ translate: '2, 5' })    //=> "translate(2px, 5px)"
+      //     .css({ translate: '2, 5, 3' })    //=> "translate(2px, 5px, 3px)"
       //
       translate: function(x, y) {
+        this.set('translate3d', x, y, 0);
+      },
+
+      translate3d: function(x, y, z) {
         if (this._translateX === undefined) { this._translateX = 0; }
         if (this._translateY === undefined) { this._translateY = 0; }
+        if (this._translateZ === undefined) { this._translateZ = 0; }
 
         if (x !== null && x !== undefined) { this._translateX = unit(x, 'px'); }
         if (y !== null && y !== undefined) { this._translateY = unit(y, 'px'); }
+        if (z !== null && z !== undefined) { this._translateZ = unit(z, 'px'); }
 
-        this.translate = this._translateX + "," + this._translateY;
+        this.translate3d = this._translateX + "," + this._translateY + "," + this._translateZ;
       }
     },
 
@@ -394,6 +377,10 @@
 
       y: function() {
         return this._translateY || 0;
+      },
+
+      z: function() {
+        return this._translateZ || 0;
       },
 
       scale: function() {
@@ -445,7 +432,7 @@
             if (use3d && (i === 'scale')) {
               re.push(i + "3d(" + this[i] + ",1)");
             } else if (use3d && (i === 'translate')) {
-              re.push(i + "3d(" + this[i] + ",0)");
+              re.push(i + "3d(" + this[i] + ")");
             } else {
               re.push(i + "(" + this[i] + ")");
             }
@@ -463,9 +450,7 @@
     } else if (queue) {
       self.queue(queue, fn);
     } else {
-      self.each(function () {
-                fn.call(this);
-            });
+      fn();
     }
   }
 
@@ -479,10 +464,6 @@
       key = $.camelCase(key); // Convert "text-align" => "textAlign"
       key = $.transit.propertyMap[key] || $.cssProps[key] || key;
       key = uncamel(key); // Convert back to dasherized
-
-      // Get vendor specify propertie
-      if (support[key])
-        key = uncamel(support[key]);
 
       if ($.inArray(key, re) === -1) { re.push(key); }
     });
@@ -550,21 +531,10 @@
     var delay = 0;
     var queue = true;
 
-    var theseProperties = $.extend(true, {}, properties);
-
     // Account for `.transition(properties, callback)`.
     if (typeof duration === 'function') {
       callback = duration;
       duration = undefined;
-    }
-
-    // Account for `.transition(properties, options)`.
-    if (typeof duration === 'object') {
-      easing = duration.easing;
-      delay = duration.delay || 0;
-      queue = typeof duration.queue === "undefined" ? true : duration.queue;
-      callback = duration.complete;
-      duration = duration.duration;
     }
 
     // Account for `.transition(properties, duration, callback)`.
@@ -574,29 +544,29 @@
     }
 
     // Alternate syntax.
-    if (typeof theseProperties.easing !== 'undefined') {
-      easing = theseProperties.easing;
-      delete theseProperties.easing;
+    if (typeof properties.easing !== 'undefined') {
+      easing = properties.easing;
+      delete properties.easing;
     }
 
-    if (typeof theseProperties.duration !== 'undefined') {
-      duration = theseProperties.duration;
-      delete theseProperties.duration;
+    if (typeof properties.duration !== 'undefined') {
+      duration = properties.duration;
+      delete properties.duration;
     }
 
-    if (typeof theseProperties.complete !== 'undefined') {
-      callback = theseProperties.complete;
-      delete theseProperties.complete;
+    if (typeof properties.complete !== 'undefined') {
+      callback = properties.complete;
+      delete properties.complete;
     }
 
-    if (typeof theseProperties.queue !== 'undefined') {
-      queue = theseProperties.queue;
-      delete theseProperties.queue;
+    if (typeof properties.queue !== 'undefined') {
+      queue = properties.queue;
+      delete properties.queue;
     }
 
-    if (typeof theseProperties.delay !== 'undefined') {
-      delay = theseProperties.delay;
-      delete theseProperties.delay;
+    if (typeof properties.delay !== 'undefined') {
+      delay = properties.delay;
+      delete properties.delay;
     }
 
     // Set defaults. (`400` duration, `ease` easing)
@@ -606,7 +576,7 @@
     duration = toMS(duration);
 
     // Build the `transition` property.
-    var transitionValue = getTransition(theseProperties, duration, easing, delay);
+    var transitionValue = getTransition(properties, duration, easing, delay);
 
     // Compute delay until callback.
     // If this becomes 0, don't bother setting the transition property.
@@ -616,7 +586,7 @@
     // If there's nothing to do...
     if (i === 0) {
       var fn = function(next) {
-        self.css(theseProperties);
+        self.css(properties);
         if (callback) { callback.apply(self); }
         if (next) { next(); }
       };
@@ -659,14 +629,14 @@
         if (i > 0) {
           this.style[support.transition] = transitionValue;
         }
-        $(this).css(theseProperties);
+        $(this).css(properties);
       });
     };
 
     // Defer running. This allows the browser to paint any pending CSS it hasn't
     // painted yet before doing the transitions.
     var deferredRun = function(next) {
-        this.offsetWidth = this.offsetWidth; // force a repaint
+        this.offsetWidth; // force a repaint
         run(next);
     };
 
@@ -724,22 +694,18 @@
   // ### toMS(duration)
   // Converts given `duration` to a millisecond string.
   //
-  // toMS('fast') => $.fx.speeds[i] => "200ms"
-  // toMS('normal') //=> $.fx.speeds._default => "400ms"
-  // toMS(10) //=> '10ms'
-  // toMS('100ms') //=> '100ms'  
+  //     toMS('fast')   //=> '400ms'
+  //     toMS(10)       //=> '10ms'
   //
   function toMS(duration) {
     var i = duration;
 
-    // Allow string durations like 'fast' and 'slow', without overriding numeric values.
-    if (typeof i === 'string' && (!i.match(/^[\-0-9\.]+/))) { i = $.fx.speeds[i] || $.fx.speeds._default; }
+    // Allow for string durations like 'fast'.
+    if ($.fx.speeds[i]) { i = $.fx.speeds[i]; }
 
     return unit(i, 'ms');
   }
 
   // Export some functions for testable-ness.
   $.transit.getTransitionValue = getTransition;
-
-  return $;
-}));
+})(jQuery);
